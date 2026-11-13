@@ -1,6 +1,10 @@
 import asyncio
 import logging
 import sys
+import io
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
 from aiogram import Bot, Dispatcher, F, html
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -21,21 +25,20 @@ from aiohttp import web
 
 from config import BOT_TOKEN, ADMIN_ID, CHANNEL_ID, WEBHOOK_URL, WEBHOOK_PATH, WEBAPP_HOST, WEBAPP_PORT
 
-# Loggingni sozlash
+# Logging
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
-# Bot va Dispatcher yaratish
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-# --- FSM (Holatlar) ---
+# FSM holatlari
 class PresentationState(StatesGroup):
     waiting_for_topic = State()
 
 class PaymentState(StatesGroup):
     waiting_for_receipt = State()
 
-# --- Asosiy menyu (Reply Keyboard) ---
+# Asosiy menyu
 def get_main_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -46,7 +49,7 @@ def get_main_menu():
         resize_keyboard=True
     )
 
-# --- Majburiy obunani tekshirish funksiyasi ---
+# Majburiy obunani tekshirish
 async def check_subscription(user_id: int) -> bool:
     try:
         member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
@@ -56,7 +59,69 @@ async def check_subscription(user_id: int) -> bool:
     except Exception:
         return False
 
-# --- /start komandasi ---
+# Professional PowerPoint (.pptx) Generator
+def generate_professional_pptx(topic: str, author: str) -> bytes:
+    prs = Presentation()
+    
+    # 1-Slayd: Muqova (Title Slide)
+    slide_layout = prs.slide_layouts[0]
+    slide = prs.slides.add_slide(slide_layout)
+    title = slide.shapes.title
+    subtitle = slide.placeholders[1]
+    
+    title.text = f"Mavzu: {topic}"
+    subtitle.text = f"Tayyorladi: {author}\nFan: Sun'iy intellekt va zamonaviy texnologiyalar"
+    
+    # 2-Slayd: Reja
+    slide_layout = prs.slide_layouts[1]
+    slide = prs.slides.add_slide(slide_layout)
+    slide.shapes.title.text = "Reja:"
+    tf = slide.placeholders[1].text_frame
+    tf.text = "1. Kirish va asosiy tushunchalar"
+    p = tf.add_paragraph()
+    p.text = f"2. {topic} ning asosiy xususiyatlari"
+    p = tf.add_paragraph()
+    p.text = "3. Amaliy ahamiyati va tahlili"
+    p = tf.add_paragraph()
+    p.text = "4. Xulosa va takliflar"
+    
+    # 3-Slayd: Kirish
+    slide = prs.slides.add_slide(slide_layout)
+    slide.shapes.title.text = "1. Kirish"
+    tf = slide.placeholders[1].text_frame
+    tf.text = f"Hozirgi kunda {topic} masalasi dolzarb mavzulardan biri hisoblanadi. Ushbu taqdimotda ushbu yo'nalishdagi asosiy jihatlar atroflicha ko'rib chiqiladi."
+    
+    # 4-Slayd: Asosiy qism
+    slide = prs.slides.add_slide(slide_layout)
+    slide.shapes.title.text = "2. Asosiy qism"
+    tf = slide.placeholders[1].text_frame
+    tf.text = f"• {topic} bo'yicha ilmiy yondashuvlar\n• Zamonaviy talablar va yechimlar\n• Asosiy ko'rsatkichlar va tahlillar"
+    
+    # 5-Slayd: Tahlil va natijalar
+    slide = prs.slides.add_slide(slide_layout)
+    slide.shapes.title.text = "3. Tahlil va natijalar"
+    tf = slide.placeholders[1].text_frame
+    tf.text = "O'tkazilgan tahlillar shuni ko'rsatadiki, mazkur mavzu kelgusida yanada rivojlanish uchun katta salohiyatga ega."
+    
+    # 6-Slayd: Xulosa
+    slide = prs.slides.add_slide(slide_layout)
+    slide.shapes.title.text = "4. Xulosa"
+    tf = slide.placeholders[1].text_frame
+    tf.text = f"Xulosa o'rnida aytish mumkinki, {topic}ni o'rganish va amaliyotga joriy etish muhim natijalarni beradi."
+    
+    # 7-Slayd: Yakuniy (E'tibor uchun rahmat)
+    slide_layout = prs.slide_layouts[0]
+    slide = prs.slides.add_slide(slide_layout)
+    slide.shapes.title.text = "E'tiboringiz uchun rahmat!"
+    slide.placeholders[1].text_frame.text = "Savollar bo'lsa marhamat."
+    
+    # Xotiraga saqlash
+    file_stream = io.BytesIO()
+    prs.save(file_stream)
+    file_stream.seek(0)
+    return file_stream.read()
+
+# /start komandasi
 @dp.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
@@ -75,17 +140,14 @@ async def cmd_start(message: Message, state: FSMContext):
         "📝 – <b>Test</b>\n"
         "🧩 – <b>Krossvord</b>\n\n"
         "yaratishingiz mumkin!\n\n"
-        "👇 Pastdagi menyudan birini tanlang yoki /manual buyrug'i orqali yo'riqnoma bilan tanishing.\n\n"
-        "Savol va takliflar: @jakhon_dev 👍"
+        "👇 Pastdagi menyudan birini tanlang."
     )
-    
     await message.answer(welcome_text, reply_markup=get_main_menu())
 
-# --- Taqdimot tugmasi bosilganda ---
+# Taqdimot tugmasi
 @dp.message(F.text == "📖 Yangi Taqdimot (Slayd)")
 async def new_presentation(message: Message, state: FSMContext):
     user_id = message.from_user.id
-    
     is_subscribed = await check_subscription(user_id)
     
     if not is_subscribed:
@@ -105,24 +167,20 @@ async def new_presentation(message: Message, state: FSMContext):
     await message.answer("Iltimos, taqdimot mavzusini kiriting (masalan: <i>Amir Temur hayoti va faoliyati</i>):")
     await state.set_state(PresentationState.waiting_for_topic)
 
-# --- Obunani tasdiqlash tugmasi (Callback) ---
 @dp.callback_query(F.data == "check_sub")
 async def verify_subscription(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
-    is_subscribed = await check_subscription(user_id)
-    
-    if is_subscribed:
+    if await check_subscription(user_id):
         await callback.message.delete()
         await callback.message.answer("Rahmat! Obuna tasdiqlandi. Endi taqdimot mavzusini kiriting:")
         await state.set_state(PresentationState.waiting_for_topic)
     else:
         await callback.answer("Siz hali kanalga obuna bo'lmadingiz! ❌", show_alert=True)
 
-# --- Mavzuni qabul qilish va saqlash ---
+# Mavzuni qabul qilish
 @dp.message(PresentationState.waiting_for_topic)
 async def process_topic(message: Message, state: FSMContext):
     topic = message.text
-    # Mavzuni FSM xotirasiga saqlab qo'yamiz (to'lov tasdiqlanganda ishlatish uchun)
     await state.update_data(topic=topic)
     
     summary_text = (
@@ -131,24 +189,20 @@ async def process_topic(message: Message, state: FSMContext):
         "🎨 Shablon: Lemon Lesson Sketch\n"
         f"📚 Mavzu: <b>{topic}</b>\n"
         "✍️ Yozuv tili: 🇺🇿 O'zbekcha (joriy alifbo)\n"
-        "📄 Rejalar soni: 3\n"
-        "📑 Sahifalar soni: 10\n"
-        "🖼 Rasm uslubi: Shablon rasmlari\n"
-        "🧩 Tarkibi: Muqova, Rejalar, Kirish, Xulosa, Foydalanilgan adabiyotlar\n"
+        "📄 Rejalar soni: 4\n"
+        "📑 Sahifalar soni: 7\n"
         f"👤 Muallif: {message.from_user.full_name.upper()}\n\n"
         "💰 <b>Narxi:</b> 3 000 so'm"
     )
     
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📄 Ma'lumotlarni tahrirlash", callback_data="edit_info")],
-            [InlineKeyboardButton(text="✅ Yaratish", callback_data="start_generation")]
+            [InlineKeyboardButton(text="✅ Yaratish (To'lovga o'tish)", callback_data="start_generation")]
         ]
     )
-    
     await message.answer(summary_text, reply_markup=markup)
 
-# --- "Yaratish" bosilganda to'lovga yo'naltirish ---
+# To'lovga o'tish
 @dp.callback_query(F.data == "start_generation")
 async def ask_for_payment(callback: CallbackQuery):
     payment_text = (
@@ -158,7 +212,6 @@ async def ask_for_payment(callback: CallbackQuery):
         "Summa: <b>3 000 so'm</b>\n\n"
         "⚠️ Pulni o'tkazib bo'lgach, to'lov cheki (skrinshot)ni shu yerga yuboring va pastdagi tugmani bosing."
     )
-    
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="✅ To'lov qildim (Chek yuborish)", callback_data="send_receipt_prompt")]
@@ -166,13 +219,12 @@ async def ask_for_payment(callback: CallbackQuery):
     )
     await callback.message.edit_text(payment_text, reply_markup=markup)
 
-# --- Chek yuborishga tayyorgarlik ---
 @dp.callback_query(F.data == "send_receipt_prompt")
 async def prompt_receipt(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("Iltimos, to'lov cheki skrinshotini rasm ko'rinishida yuboring:")
     await state.set_state(PaymentState.waiting_for_receipt)
 
-# --- Foydalanuvchi chek rasmini yuborganda ---
+# Chekni qabul qilish va adminga yuborish
 @dp.message(PaymentState.waiting_for_receipt, F.photo)
 async def receive_receipt(message: Message, state: FSMContext):
     photo_file_id = message.photo[-1].file_id
@@ -180,15 +232,12 @@ async def receive_receipt(message: Message, state: FSMContext):
     user_name = message.from_user.full_name
     username = message.from_user.username or "Kiritilmagan"
     
-    # Foydalanuvchi yuborgan ma'lumotlarni (mavzuni) saqlab qolgan holda holatni tozalaymiz
     data = await state.get_data()
-    topic = data.get("topic", "Noma'lum mavzu")
+    topic = data.get("topic", "Taqdimot ishi")
     
     await state.clear()
     await message.answer("⏳ Chekingiz adminga yuborildi. Iltimos, tasdiqlashlarini kuting.")
     
-    # Admin uchun tugmalar va ma'lumot (callback ichida user_id va mavzuni saqlaymiz)
-    # Eslatma: callback_data uzunligi chegaralanganligi sababli mavzuni qisqartiramiz yoki faqat user_id olib ishlaymiz
     admin_markup = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -197,7 +246,6 @@ async def receive_receipt(message: Message, state: FSMContext):
             ]
         ]
     )
-    
     admin_text = (
         f"💰 <b>Yangi to'lov cheki keldi!</b>\n\n"
         f"👤 Foydalanuvchi: {user_name}\n"
@@ -206,6 +254,7 @@ async def receive_receipt(message: Message, state: FSMContext):
         f"📚 Mavzu: <b>{topic}</b>"
     )
     
+    # Mavzuni vaqtincha saqlab turish uchun admin xabariga bog'laymiz yoki bot xotirasida saqlaymiz
     await bot.send_photo(
         chat_id=ADMIN_ID,
         photo=photo_file_id,
@@ -213,63 +262,50 @@ async def receive_receipt(message: Message, state: FSMContext):
         reply_markup=admin_markup
     )
 
-# --- ADMIN "Tasdiqlash" tugmasini bosganda (Slayd yasash va yuborish qismi) ---
+# ADMIN TASDIqlAGANDA SLAYDNI YASAB BERISH QISMI
 @dp.callback_query(F.data.startswith("approve_"))
 async def approve_payment(callback: CallbackQuery):
     user_id = int(callback.data.split("_")[1])
     
     try:
-        # 1. Foydalanuvchiga xabar beramiz
         await bot.send_message(
             chat_id=user_id,
             text="✅ <b>Tabriklaymiz!</b> To'lovingiz admin tomonidan tasdiqlandi.\n\n"
-                 "🔄 Sun'iy intellekt sizning mavzuingiz bo'yicha taqdimot matni va slaydlarini tayyorladi!"
+                 "🔄 Professional PowerPoint (.pptx) taqdimotingiz tayyorlanmoqda..."
         )
         
-        # 2. Slayd matnini generatsiya qilish (Simulyatsiya yoki tayyor matn yaratish)
-        presentation_content = (
-            f"=====================================\n"
-            f"       TAQDIMOT (SLAYD MATNI)        \n"
-            f"=====================================\n\n"
-            f"1-Slayd: MAVZU VA KIRISH\n"
-            f"• Mavzu: Taqdimot ishi\n"
-            f"• Reja va asosiy tushunchalar.\n\n"
-            f"2-Slayd: ASOSIY QISM\n"
-            f"• Mavzuning batafsil tahlili va muhim jihatlari.\n\n"
-            f"3-Slayd: XULOSA\n"
-            f"• Yakoniy fikrlar va takliflar.\n\n"
-            f"E'tiboringiz uchun rahmat!"
-        )
+        # Admin xabari matnidan mavzuni ajratib olish yoki standart nom berish
+        caption = callback.message.caption
+        topic_line = [line for line in caption.split("\n") if "Mavzu:" in line]
+        topic = topic_line[0].replace("Mavzu: ", "").replace("<b>", "").replace("</b>", "").strip() if topic_line else "Taqdimot"
         
-        # Matnni fayl (.txt) ko'rinishida tayyorlab jo'natamiz
-        file_bytes = presentation_content.encode('utf-8')
-        document = BufferedInputFile(file_bytes, filename="taqdimot_slayd.txt")
+        # PowerPoint faylni generatsiya qilish
+        pptx_bytes = generate_professional_pptx(topic=topic, author="SlaydGPT AI")
+        document = BufferedInputFile(pptx_bytes, filename=f"taqdimot_{user_id}.pptx")
         
+        # Foydalanuvchiga .pptx faylni yuborish
         await bot.send_document(
             chat_id=user_id,
             document=document,
-            caption="📄 Mana sizning tayyor taqdimot materialingiz! Uni yuklab olib foydalanishingiz mumkin."
+            caption="🎉 <b>Mana sizning tayyor PowerPoint taqdimotingiz!</b>\nUni yuklab olib bemalol foydalanishingiz mumkin."
         )
 
-        # Admin xabarini yangilaymiz
         await callback.message.edit_caption(
-            caption=callback.message.caption + "\n\n<b>STATUS: ✅ TASDIQLANGAN VA SLAYD YUBORILDI</b>",
+            caption=callback.message.caption + "\n\n<b>STATUS: ✅ TASDIQLANGAN VA PPTX YUBORILDI</b>",
             reply_markup=None
         )
-        await callback.answer("Muvaffaqiyatli tasdiqlandi va foydalanuvchiga slayd yuborildi!", show_alert=True)
+        await callback.answer("Muvaffaqiyatli tasdiqlandi va slayd yuborildi!", show_alert=True)
         
     except Exception as e:
         await callback.answer(f"Xatolik: {e}", show_alert=True)
 
-# --- ADMIN "Rad etish" tugmasini bosganda ---
 @dp.callback_query(F.data.startswith("reject_"))
 async def reject_payment(callback: CallbackQuery):
     user_id = int(callback.data.split("_")[1])
-    
     try:
         await bot.send_message(
             chat_id=user_id,
-            text="❌ Afsuski, to'lovingiz rad etildi yoki chek yaroqsiz deb topildi. Qaytadan urinib ko'ring."
+            text="❌ Afsuski, to'lovingiz rad etildi yoki chek yaroqsiz deb topildi."
         )
         await callback.message.edit_caption(
             caption=callback.message.caption + "\n\n<b>STATUS: ❌ RAD ETILDI</b>",
@@ -279,17 +315,14 @@ async def reject_payment(callback: CallbackQuery):
     except Exception as e:
         await callback.answer(f"Xatolik: {e}", show_alert=True)
 
-# --- Render Webhook qismi ---
+# Webhook qismi
 async def on_startup(bot: Bot):
     await bot.set_webhook(WEBHOOK_URL)
 
 def main():
     app = web.Application()
-    webhook_requests_handler = SimpleRequestHandler(
-        dispatcher=dp,
-        bot=bot,
-    )
-    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+    webhook_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
+    webhook_handler.register(app, path=WEBHOOK_PATH)
     app.on_startup.append(lambda app: on_startup(bot))
     
     setup_application(app, dp, bot=bot)
