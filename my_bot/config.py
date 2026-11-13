@@ -10,7 +10,7 @@ ADMIN_ID = env.int("ADMIN_ID", 8052376816)  # O'z Telegram ID raqamingizni yozin
 CHANNEL_ID = env.str("CHANNEL_ID", "@usatslayt")  # Majburiy obuna kanali
 
 # Render uchun Webhook sozlamalari
-WEBHOOK_HOST = env.str("WEBHOOK_HOST", "https://sizning-app-nomingiz.onrender.com")
+WEBHOOK_HOST = env.str("WEBHOOK_HOST", "https://usatslayduz.onrender.com")
 WEBHOOK_PATH = f"/bot/{BOT_TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
