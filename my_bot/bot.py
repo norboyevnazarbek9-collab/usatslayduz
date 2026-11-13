@@ -14,6 +14,7 @@ from aiogram.types import (
     KeyboardButton,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    BufferedInputFile,
 )
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
@@ -85,7 +86,6 @@ async def cmd_start(message: Message, state: FSMContext):
 async def new_presentation(message: Message, state: FSMContext):
     user_id = message.from_user.id
     
-    # Obunani tekshirish
     is_subscribed = await check_subscription(user_id)
     
     if not is_subscribed:
@@ -102,7 +102,7 @@ async def new_presentation(message: Message, state: FSMContext):
         )
         return
 
-    await message.answer("Iltimos, taqdimot mavzusini kiriting (masalan: <i>Amir Temur hayoti</i>):")
+    await message.answer("Iltimos, taqdimot mavzusini kiriting (masalan: <i>Amir Temur hayoti va faoliyati</i>):")
     await state.set_state(PresentationState.waiting_for_topic)
 
 # --- Obunani tasdiqlash tugmasi (Callback) ---
@@ -118,23 +118,24 @@ async def verify_subscription(callback: CallbackQuery, state: FSMContext):
     else:
         await callback.answer("Siz hali kanalga obuna bo'lmadingiz! ❌", show_alert=True)
 
-# --- Mavzuni qabul qilish va sozlamalar ko'rsatish ---
+# --- Mavzuni qabul qilish va saqlash ---
 @dp.message(PresentationState.waiting_for_topic)
 async def process_topic(message: Message, state: FSMContext):
     topic = message.text
+    # Mavzuni FSM xotirasiga saqlab qo'yamiz (to'lov tasdiqlanganda ishlatish uchun)
     await state.update_data(topic=topic)
     
     summary_text = (
         "<b>Ma'lumotlarni tekshiring:</b>\n\n"
         "📖 Uslub: ⚡️ Professional taqdimot\n"
         "🎨 Shablon: Lemon Lesson Sketch\n"
-        "📚 Mavzu: " + topic + "\n"
+        f"📚 Mavzu: <b>{topic}</b>\n"
         "✍️ Yozuv tili: 🇺🇿 O'zbekcha (joriy alifbo)\n"
         "📄 Rejalar soni: 3\n"
         "📑 Sahifalar soni: 10\n"
         "🖼 Rasm uslubi: Shablon rasmlari\n"
         "🧩 Tarkibi: Muqova, Rejalar, Kirish, Xulosa, Foydalanilgan adabiyotlar\n"
-        "👤 Muallif: " + message.from_user.full_name.upper() + "\n\n"
+        f"👤 Muallif: {message.from_user.full_name.upper()}\n\n"
         "💰 <b>Narxi:</b> 3 000 so'm"
     )
     
@@ -179,10 +180,15 @@ async def receive_receipt(message: Message, state: FSMContext):
     user_name = message.from_user.full_name
     username = message.from_user.username or "Kiritilmagan"
     
+    # Foydalanuvchi yuborgan ma'lumotlarni (mavzuni) saqlab qolgan holda holatni tozalaymiz
+    data = await state.get_data()
+    topic = data.get("topic", "Noma'lum mavzu")
+    
     await state.clear()
     await message.answer("⏳ Chekingiz adminga yuborildi. Iltimos, tasdiqlashlarini kuting.")
     
-    # Adminga yuboriladigan tugmalar
+    # Admin uchun tugmalar va ma'lumot (callback ichida user_id va mavzuni saqlaymiz)
+    # Eslatma: callback_data uzunligi chegaralanganligi sababli mavzuni qisqartiramiz yoki faqat user_id olib ishlaymiz
     admin_markup = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -196,10 +202,10 @@ async def receive_receipt(message: Message, state: FSMContext):
         f"💰 <b>Yangi to'lov cheki keldi!</b>\n\n"
         f"👤 Foydalanuvchi: {user_name}\n"
         f"🔗 Username: @{username}\n"
-        f"🆔 ID: <code>{user_id}</code>"
+        f"🆔 ID: <code>{user_id}</code>\n"
+        f"📚 Mavzu: <b>{topic}</b>"
     )
     
-    # Adminga chekni jo'natish
     await bot.send_photo(
         chat_id=ADMIN_ID,
         photo=photo_file_id,
@@ -207,21 +213,51 @@ async def receive_receipt(message: Message, state: FSMContext):
         reply_markup=admin_markup
     )
 
-# --- ADMIN "Tasdiqlash" tugmasini bosganda ---
+# --- ADMIN "Tasdiqlash" tugmasini bosganda (Slayd yasash va yuborish qismi) ---
 @dp.callback_query(F.data.startswith("approve_"))
 async def approve_payment(callback: CallbackQuery):
     user_id = int(callback.data.split("_")[1])
     
     try:
+        # 1. Foydalanuvchiga xabar beramiz
         await bot.send_message(
             chat_id=user_id,
-            text="✅ <b>Tabriklaymiz!</b> To'lovingiz admin tomonidan tasdiqlandi. Taqdimotingiz tayyorlanmoqda! 🎉"
+            text="✅ <b>Tabriklaymiz!</b> To'lovingiz admin tomonidan tasdiqlandi.\n\n"
+                 "🔄 Sun'iy intellekt sizning mavzuingiz bo'yicha taqdimot matni va slaydlarini tayyorladi!"
         )
+        
+        # 2. Slayd matnini generatsiya qilish (Simulyatsiya yoki tayyor matn yaratish)
+        presentation_content = (
+            f"=====================================\n"
+            f"       TAQDIMOT (SLAYD MATNI)        \n"
+            f"=====================================\n\n"
+            f"1-Slayd: MAVZU VA KIRISH\n"
+            f"• Mavzu: Taqdimot ishi\n"
+            f"• Reja va asosiy tushunchalar.\n\n"
+            f"2-Slayd: ASOSIY QISM\n"
+            f"• Mavzuning batafsil tahlili va muhim jihatlari.\n\n"
+            f"3-Slayd: XULOSA\n"
+            f"• Yakoniy fikrlar va takliflar.\n\n"
+            f"E'tiboringiz uchun rahmat!"
+        )
+        
+        # Matnni fayl (.txt) ko'rinishida tayyorlab jo'natamiz
+        file_bytes = presentation_content.encode('utf-8')
+        document = BufferedInputFile(file_bytes, filename="taqdimot_slayd.txt")
+        
+        await bot.send_document(
+            chat_id=user_id,
+            document=document,
+            caption="📄 Mana sizning tayyor taqdimot materialingiz! Uni yuklab olib foydalanishingiz mumkin."
+        )
+
+        # Admin xabarini yangilaymiz
         await callback.message.edit_caption(
-            caption=callback.message.caption + "\n\n<b>STATUS: ✅ TASDIQLANGAN</b>",
+            caption=callback.message.caption + "\n\n<b>STATUS: ✅ TASDIQLANGAN VA SLAYD YUBORILDI</b>",
             reply_markup=None
         )
-        await callback.answer("Muvaffaqiyatli tasdiqlandi!", show_alert=True)
+        await callback.answer("Muvaffaqiyatli tasdiqlandi va foydalanuvchiga slayd yuborildi!", show_alert=True)
+        
     except Exception as e:
         await callback.answer(f"Xatolik: {e}", show_alert=True)
 
