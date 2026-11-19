@@ -26,6 +26,7 @@ from config import (
     SERVICE_LABELS,
     SERVICE_PRICES,
 )
+from llm_client import call_llm
 from pptx_builder import create_presentation_bytes
 from prompts import (
     build_abstract_prompt,
@@ -184,14 +185,6 @@ def get_payment_text(service_key: str, user_id: int) -> tuple[int, str]:
     return final_price, text
 
 
-async def call_llm(prompt: str) -> str:
-    """
-    Bu yerga o'zingizning LLM API chaqiruvingizni qo'ying.
-    Masalan: OpenAI / Gemini SDK orqali matn qaytaradi.
-    """
-    raise NotImplementedError("call_llm() funksiyasiga LLM API chaqiruvini ulang.")
-
-
 async def deliver_service(bot: Bot, chat_id: int, order: dict) -> None:
     service_key = order["service_key"]
     mavzu = clean_text(order["topic"])
@@ -205,7 +198,6 @@ async def deliver_service(bot: Bot, chat_id: int, order: dict) -> None:
         raw = await call_llm(prompt)
         raw_clean = clean_text(raw)
 
-        # JSON ajratib olish
         start_idx = raw_clean.find("{")
         end_idx = raw_clean.rfind("}")
         slides_list: list[dict] = []
@@ -253,13 +245,15 @@ async def deliver_service(bot: Bot, chat_id: int, order: dict) -> None:
     raw_text = await call_llm(prompt)
     final_text = clean_text(raw_text)
 
-    # Uzun matnni bo'lib yuborish
     chunk_size = 3800
     for i in range(0, len(final_text), chunk_size):
         await bot.send_message(chat_id=chat_id, text=final_text[i : i + chunk_size])
 
     file_bytes = io.BytesIO(final_text.encode("utf-8"))
-    txt_doc = BufferedInputFile(file_bytes.getvalue(), filename=f"{title_prefix.lower().replace(' ', '_')}_{chat_id}.txt")
+    txt_doc = BufferedInputFile(
+        file_bytes.getvalue(),
+        filename=f"{title_prefix.lower().replace(' ', '_')}_{chat_id}.txt",
+    )
     await bot.send_document(chat_id=chat_id, document=txt_doc, caption=f"Tayyor {title_prefix}")
 
 
@@ -269,7 +263,6 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext) -> None:
     await state.clear()
     user_id = message.from_user.id
 
-    # Referal parametrini tekshirish: /start 123456
     args = (message.text or "").split(maxsplit=1)
     if len(args) == 2 and args[1].strip().isdigit():
         ref_id = int(args[1].strip())
@@ -394,7 +387,7 @@ async def process_subject(message: Message, state: FSMContext) -> None:
 
     if service_key == "slide":
         await state.set_state(OrderStates.waiting_slides_count)
-        await message.answer("Nechta slayd bo'lsin? (Masalan: 7, 5 dan 15 gacha son kiriting):")
+        await message.answer("Nechta slayd bo'lsin? (Masalan: 7, 3 dan 20 gacha son kiriting):")
         return
 
     price, pay_text = get_payment_text(service_key, message.from_user.id)
@@ -469,7 +462,6 @@ async def process_receipt(message: Message, bot: Bot, state: FSMContext) -> None
             reply_markup=main_menu_keyboard(),
         )
     else:
-        # Agar ADMIN_IDS hali kiritilmagan bo'lsa ham bot to'xtab qolmaydi
         await message.answer(
             "Admin ID hali kiritilmagan. Chekingiz vaqtincha qabul qilindi.",
             reply_markup=main_menu_keyboard(),
@@ -493,7 +485,6 @@ async def cb_approve_order(callback: CallbackQuery, bot: Bot) -> None:
         await callback.answer("Buyurtma topilmadi yoki allaqachon ko'rib chiqilgan.", show_alert=True)
         return
 
-    # Ishlatilgan bonusni yechish
     used_bonus = max(0, SERVICE_PRICES.get(order["service_key"], DEFAULT_PRICE) - order["price"])
     if used_bonus > 0 and order["user_id"] in USER_BONUSES:
         USER_BONUSES[order["user_id"]] = max(0, USER_BONUSES[order["user_id"]] - used_bonus)
